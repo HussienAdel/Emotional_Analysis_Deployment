@@ -20,10 +20,20 @@ logging.basicConfig(level=logging.DEBUG)  # Set the logging level to DEBUG
 nltk.download('stopwords')
 
 # Load the model with the custom initializer
-model = load_model('my_model.h5', custom_objects={'Orthogonal': Orthogonal})
+try:
+    model = load_model('my_model.h5', custom_objects={'Orthogonal': Orthogonal})
+    logging.info("Model loaded successfully")
+except Exception as e:
+    logging.error("Failed to load model: %s", str(e))
+    raise e  # Raise exception to terminate application if model loading fails
 
 # Load the vectorizer
-vectorizer = pickle.load(open('vactorizer.pkl', 'rb'))
+try:
+    vectorizer = pickle.load(open('vactorizer.pkl', 'rb'))
+    logging.info("Vectorizer loaded successfully")
+except Exception as e:
+    logging.error("Failed to load vectorizer: %s", str(e))
+    raise e  # Raise exception to terminate application if vectorizer loading fails
 
 # Define emotion labels
 labels = {0: "sad", 1: "joy", 2: "love", 3: "angry", 4: "fear", 5: "surprise"}
@@ -60,6 +70,10 @@ def predict():
         
         # Log the received data
         logging.debug("Received data: %s", data)
+        
+        # Validate input data
+        if 'text' not in data:
+            return jsonify({'error': 'Invalid input: Missing "text" field'}), 400
         
         # Preprocess the text
         preprocessed_text = preprocess_text(data['text'])
