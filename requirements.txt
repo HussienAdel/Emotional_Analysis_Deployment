@@ -4,3 +4,4 @@ flask
 nltk
 scikit-learn
 tensorflow==2.15.0
+logging

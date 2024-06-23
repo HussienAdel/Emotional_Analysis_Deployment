@@ -1,24 +1,36 @@
-
 import numpy as np
-from flask import Flask, request, jsonify, render_template
-import os
+from flask import Flask, request, jsonify
 import pickle
 import re
-
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer, WordNetLemmatizer
-
 from tensorflow.keras.initializers import Orthogonal
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+import logging
 
+# Initialize Flask application
+app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)  # Set the logging level to DEBUG
+
+# Download NLTK stopwords
 nltk.download('stopwords')
+
+# Load the model with the custom initializer
+model = load_model('my_model.h5', custom_objects={'Orthogonal': Orthogonal})
+
+# Load the vectorizer
+vectorizer = pickle.load(open('vactorizer.pkl', 'rb'))
+
+# Define emotion labels
+labels = {0: "sad", 1: "joy", 2: "love", 3: "angry", 4: "fear", 5: "surprise"}
 
 def preprocess_text(text):
     # Tokenize the text
     text = re.sub('[^a-zA-Z]', ' ', text)
-    
     tokens = nltk.word_tokenize(text)
 
     # Convert all the words to lowercase
@@ -32,7 +44,7 @@ def preprocess_text(text):
     stemmer = PorterStemmer()
     tokens = [stemmer.stem(word) for word in tokens]
     
-    # lemmatize the words
+    # Lemmatize the words
     lemmatizer = WordNetLemmatizer()
     tokens = [lemmatizer.lemmatize(word) for word in tokens]
 
@@ -40,49 +52,48 @@ def preprocess_text(text):
     preprocessed_text = ' '.join(tokens)
     return preprocessed_text
 
-
-# Load the model with the custom initializer
-model = load_model('my_model.h5', custom_objects={'Orthogonal': Orthogonal})
-
-vectorizer = pickle.load(open('vactorizer.pkl', 'rb'))
-
-# Verify the model by printing its summary
-#loaded_model.summary()
-
-app = Flask(__name__) # Initialize the flask App
-
-labels = {0:"sad", 1:"joy", 2:"love", 3:"angry", 4:"fear", 5:"surprise"}
-
 @app.route('/predict', methods=['POST'])
 def predict():
+    try:
+        # Get data from the request
+        data = request.get_json()
+        
+        # Log the received data
+        logging.debug("Received data: %s", data)
+        
+        # Preprocess the text
+        preprocessed_text = preprocess_text(data['text'])
+        
+        # Split the preprocessed text into tokens
+        splited_data = preprocessed_text.split()
+
+        # Vectorize the preprocessed text
+        sequences = vectorizer.texts_to_sequences([splited_data])
+        
+        # Pad sequences
+        padded_sequences = pad_sequences(sequences, maxlen=80, padding='post')
+
+        # Make a prediction
+        prediction = model.predict(np.array(padded_sequences)).tolist()
+        
+        # Log the prediction
+        logging.debug("Prediction probabilities: %s", prediction)
+        
+        # Get the index of the highest probability
+        indexed_predictions = [(i, pred) for i, pred in enumerate(prediction[0])]
+        indexed_predictions.sort(key=lambda x: x[1], reverse=True)
+        out = labels[indexed_predictions[0][0]]
+        
+        # Log the final prediction
+        logging.info("Predicted emotion: %s", out)
+
+        # Return the prediction as JSON response
+        return jsonify({'prediction': out})
     
-    # Get data from the request
-    data = request.get_json()
-
-    # Preprocess the text
-    preprocessed_text = preprocess_text(data['text'])
-    
-    splited_data = preprocessed_text.split()
-
-    # Vectorize the preprocessed text
-    sequences = vectorizer.texts_to_sequences([splited_data])
-    
-    # Pad sequences
-    padded_sequences = pad_sequences(sequences, maxlen=80, padding='post')
-
-    # Make a prediction
-    prediction = model.predict(np.array(padded_sequences)).tolist()
-    
-    indexed_predictions = [(i, pred) for i, pred in enumerate(prediction[0])]
-    
-    indexed_predictions.sort(key=lambda x: x[1], reverse=True)
-
-    out = labels[indexed_predictions[0][0]]
-
-    # Return the predictions as JSON
-    return jsonify({'prediction': out})
-
+    except Exception as e:
+        # Log any exceptions that occur during prediction
+        logging.error("Prediction error: %s", str(e))
+        return jsonify({'error': 'Prediction failed'}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
-
