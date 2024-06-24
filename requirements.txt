@@ -5,3 +5,4 @@ nltk
 scikit-learn
 tensorflow
 logging
+h5py
